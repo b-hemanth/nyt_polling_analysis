@@ -225,7 +225,30 @@ gender_race %>%
 ```
 
 
-# 4 Partisanship
+# 4 Partisanship (For Iowa 3rd)
+```{r iowa_pre-processing}
+iowa_oct18_poll <- read_csv("mt_1_elections-poll-ia03-3.csv",
+                            col_names = TRUE,
+                            cols(
+                              .default = col_character(),
+                              turnout_scale = col_double(),
+                              turnout_score = col_double(),
+                              w_LV = col_double(),
+                              w_RV = col_double(),
+                              final_weight = col_double(),
+                              timestamp = col_datetime(format = "")
+                              )) %>% 
+  # Clean column names to tidyverse style
+  clean_names() 
+# DESIGN DECISION NOTE
+# Setting NA responses to response as undecided
+# It is clearly mentioned in the NYT article that they do this
+# So, it makes sense to follow the same as the creators of the data
+# Further, it is intuitive that those who didn't clearly respond Dem, Rep, or other are probably undecided
+iowa_oct18_poll$response <- ifelse(is.na(iowa_oct18_poll$response), 
+             "Und", iowa_oct18_poll$response)
+```
+
 ```{r partisan_responses}
 # Duplicate main df
 # DESIGN NOTE
@@ -287,7 +310,7 @@ a %>%
   tab_source_note(source_note = "Data from the New York Times Upshot")
 ```
 
-# 5 Age Analysis
+# 5 Age Analysis for Iowa 3rd
 
 ```{r age_likely_response_q3}
 # Make another duplicate of the df for Q3
@@ -378,7 +401,7 @@ table_age_likely %>%
   )
 ```
 
-# 6 Race and Education Analysis
+# 6 Race and Education Analysis for Iowa 3rd
 
 ```{r race_educ}
 # Create another duplicate of df for Q4
