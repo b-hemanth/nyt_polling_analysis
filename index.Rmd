@@ -50,59 +50,8 @@ polls <- read_csv("ps_4_elections-poll-nc09-3.csv",
 # This is auto-checked by `lintr::lint("test.R")````
 ```
 
-# 1 Mad Libs
 
-```{r mad_libs_q1, include=FALSE}
-# Checking to see if there are any nonsense values for response
-# polls %>% 
-#   group_by(response) %>% 
-#   summarize()
-# We know that all the values of response are fine 
-# based on the following being the result
-# response
-# <chr>
-# 3				
-# Dem				
-# Rep				
-# Und
-# Counting response
-dem_rep_count <- polls %>% 
-  group_by(response) %>% 
-  count() %>% 
-  # Arrange for certainty on what the position of the cell
-  # to include in in-line text will be
-  arrange()
-# Filter for discrepancy rows
-gender_diff <- polls %>% 
-  filter(gender != gender_combined) %>% 
-  # count these rows
-  count()
-# Repeat the process for race
-# First ensure that race_eth was white
-race_white_diff <- polls %>% 
-  filter(race_eth == "White", race_eth != file_race_black) %>% 
-  count()
-# Tabulate times of response and arrange chronologically
-time_rep_dem_diff <- polls %>% 
-  filter(response %in% c("Rep", "Dem")) %>% 
-  arrange(timestamp) %>% 
-  select(timestamp, response) 
-# Find the difference between first rep and dem
-time_diff <- time_rep_dem_diff[3,1] - time_rep_dem_diff[1,1] 
-# Round of the difference to the nearest minute
-time_diff <- round(time_diff[1,1])
-```
-There were **`r dem_rep_count[2,2]`** respondents who supported the Democratic candidate.
-
-There were **`r (dem_rep_count[3,2] - dem_rep_count[4,2])`** more respondents who favored the Republican candidate than who were Undecided.
-
-There are two gender variables (`gender` and `gender_combined`). There are **`r gender_diff[1,1]`** individuals for whom these variables have different values.
-
-There are **`r race_white_diff[1,1]`** respondents listed as “White” under `race_eth` who are not listed as “White” under `file_race_black`.
-
-The first `response` of Rep came **`r time_diff`** minutes (rounded to the nearest minute) before the first response of Dem.
-
-# 2 Distribution of Votes Based on Race
+# 1 Distribution of Votes Based on Race
 ```{r table_q1}
 # Question 2
 # Create new tibble
@@ -165,7 +114,8 @@ race %>%
   decimals = 0)
 ```
 
-# 3 Education vs Turnout Weights 
+# 2 Education vs Turnout Weights 
+Turnout weights measured likelihood to turnout to vote.
 
 ```{r turnout_education_plot}
 # Q3
@@ -195,7 +145,7 @@ educ_graph %>%
   xlab(NULL) 
 ```
 
-# 4 Race, Gender vs Voting Republican
+# 3 Race, Gender vs Voting Republican
 The purpose of this plot is to study whether gender was a key factor of voting in the 9th District. However, it appears that while race playaed a great role, except for Hispanic women who were somewhat less likely to vote Republican than Hispanic men, other races showed insignificant gender-based difference.
 
 **This is interesting because it studies whether within the same racial background, gender could swing votes, but we find that it did not do so.**
