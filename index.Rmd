@@ -31,6 +31,30 @@ library(viridis)
 library(lubridate)
 library(devtools)
 library(gt)
+library(readr)
+# We use Janitor to clean up the df, particularly, to clean column names
+library(janitor)
+# We use the tabs function from this for Q2
+library(stats)
+# For using github
+library(devtools)
+# For making stylish tables
+library(gt)
+library(gmodels)
+library(shiny)
+library(tsbox)
+# For table presentation
+library(data.table)
+# For dplyr functions
+library(dplyr)
+# For data presentation
+library(formattable)
+# We use the function unite from this 
+library(tidyr)
+# For themes on plots
+library(ggthemes)
+# For more style options
+library(graphics)
 # This project uses Harvard enrollment data obtained from the Registrar of the FAS
 # The .xlsx file can be found on Canvas
 # Loading the excel file skipping so that the titles of each column match those in the R df
@@ -199,3 +223,400 @@ gender_race %>%
   # It also makes neat boxlike structures and cleans up the facet wrap
   theme_stata()
 ```
+
+
+# 4 Partisanship
+```{r partisan_responses}
+# Duplicate main df
+# DESIGN NOTE
+# We are making `partisan` because we don't want to modify the original df 
+# as it will be used again in future questions
+partisan <- iowa_oct18_poll
+# Make new columns for new partyid and response
+# Make them as the factor values of original columns
+partisan$new_partyid = as.factor(partisan$partyid)
+partisan$new_response = as.factor(partisan$response)
+# Recode as per requirements
+# Combine the levels other than “Democrat” and “Republican” into a new level called “Other”
+partisan$new_partyid <-  recode(partisan$new_partyid, 
+                                "Democrat" = "Democrat", 
+                                "Republican" = "Republican",
+                                .default = "Other")
+#  New response variable which only has three levels — “Democrat”, “Republican”, and “Undecided”,
+# with all other values recoded as “Undecided”.
+partisan$new_response <- recode(partisan$new_response, 
+                                "Dem" = "Democrat", 
+                                "Rep" = "Republican",
+                                .default = "Undecided")
+
+df <- partisan %>% 
+  select(new_response, new_partyid) 
+# Note: I don't filter or check for NA values because xtabs automatically ignores them
+# DESIGN DECISION NOTE 
+# USING XTABS INSTEAD OF A COUNT AND SPREAD BASED APPROACH
+# The benefit of categorical data is that we can directly convert it
+# xtabs converts categorical data into two way frequency table
+a <- xtabs(~ new_response + new_partyid, df)
+# Convert xtab output into dataframe
+# This is required as xtabs gives us an integer value
+# NOTE
+# This converts the spread values into a frequency chart with gathered values
+# We can then spread it
+a = as.data.frame(a)
+# Group by response 
+a <- a %>% 
+  group_by(new_response) %>% 
+  # Spread so that we get parties as columns
+  spread(key = new_partyid, value = Freq)
+
+# DESIGN DECISION NOTE
+# Using r/gt tables
+# This is a great package that gives stylistic, readable, and clean tables
+# It's also easy to produce tables in
+# It has great functions like fmt_* that help edit values without changing the values in the dataframe directly
+# Make the table
+a %>% 
+  # The initial column is response
+  gt(rowname_col = "new_response") %>% 
+  # Create table title and subtitle
+  tab_header(
+    title = "Frequency of Combinations of Response and Party",
+    subtitle = "Rows are Responses and Columns are Party IDs: Two Way Frequency Table"
+    ) %>%
+  # Cite the data source
+  tab_source_note(source_note = "Data from the New York Times Upshot")
+```
+
+# 5 Age Analysis
+
+```{r age_likely_response_q3}
+# Make another duplicate of the df for Q3
+age_likely <- iowa_oct18_poll %>% 
+  # Remove [DO NOT READ] values for ager and likely
+  filter(
+    ager != "[DO NOT READ] Refused", 
+    likely != "[DO NOT READ] Don't know/Refused"
+    ) %>% 
+  # Converty to factor
+  # Recode so that the age groups are made into the given numbers
+  # Assume that a person’s true age is at the midpoint of their range. 
+  # Assume that those in the oldest category are 75. 
+  mutate(ager = as.factor(ager), 
+         ager = recode(ager, 
+         "18 to 34" = "26",
+         "35 to 49" = "42",
+         "50 to 64" = "57",
+         "65 and older" = "75"),
+         likely = as.factor(likely)) %>%
+  # To convert the factor into integer
+  # First conver to character and then to numeric
+  mutate(ager = as.numeric(as.character(ager))) %>% 
+  # Create a table of the average age for each category of likely voter and each response,
+  # but only keeping rows with a response of “Dem” or “Rep”.
+  filter(response %in% c("Rep", "Dem")) %>% 
+  # Group by likely and response as required
+  group_by(likely, response) %>% 
+  # Find mean age
+  summarise(mean_age = mean(ager)) %>% 
+  # Spread to get parties as columns
+  spread(key = response, value = mean_age) %>% 
+  # Ungroup
+  ungroup() 
+
+# After trying to rearrange it through mutiple methods 
+# Like ungroup(), ungroup(likely), creating a new id of row_number() and grouping by it, grouping by a different variable, changing the order of the columns using select and attempting to create new grouping, I see that dplyr doesn't seem to be able to truly ungroup it
+# As a result, the levels do not arrange in a sensible way
+# So, I chose a different, unconventional method
+# I split the table into two tables
+# And rejoined them to produce the right order
+# I made a temporary tibble with the rows that didn't fit into order
+temp <- age_likely %>% 
+  filter(likely %in% c("Almost certain", "Already voted"))
+# Define a not in function so that we can effectively filter out many values
+'%!in%' <- function(x,y)!('%in%'(x,y))
+# Split the table into a new one without the values in temp
+age_likely <- age_likely %>% 
+  filter(likely %!in% c("Almost certain", "Already voted"))
+# Full join them
+# This retains the original data
+# But, moves the misplaced values from the top to the bottom
+# This makes the row order perfect
+table_age_likely <- age_likely %>% 
+  full_join(temp, by = c("likely", "Dem", "Rep"))
+# DESIGN DECISION NOTE
+# The row order I chose was ascending likelihood
+# This looked easiest to understand and made most intuitive sense
+
+# Make the table
+table_age_likely %>% 
+  # Set the first column as likely
+  gt(rowname_col = "likely") %>% 
+  # Make title and subtitle
+  tab_header(
+    title = "Mean Age of Democrat and Republican Voters with Different Turnout Likelihoods",
+    subtitle = "The Mean Age of Respondents of Different Turnout Likelihoods Who Preferred Each Party"
+    ) %>%
+  # Cite the data source
+  tab_source_note(
+    source_note = "Data from the New York Times Upshot"
+    ) %>% 
+  # Format both the party columns as a number
+  fmt_number(
+    columns = vars(Dem, Rep),
+    # DESIGN DECISION NOTE on 2 decimal places
+    # Age values are close enough that they warrant decimal places for clarity
+    # however, anything beyond 2 decimal places seems irrelevant as 0.001 of a year 
+    # is an amount in hours and not even days
+    decimals = 2
+  ) %>% 
+  # DESIGN DECISION NOTE
+  # For a user not familiar with the US political system, Dem and Rep might not have intuitive meaning
+  # Specifying the full and common party name makes most sense for non technical users
+  cols_label(
+    Dem = html("Democrat"),
+    Rep = html("Republican")
+  )
+```
+
+# 6 Race and Education Analysis
+
+```{r race_educ}
+# Create another duplicate of df for Q4
+race_educ <- iowa_oct18_poll %>% 
+  # We use the readily available race_edu data 
+  # Remove [DO NOT READ] values
+  filter(race_edu !="[DO NOT READ] Don't know/Refused") %>% 
+  # DESIGN DECISION NOTE
+  # The NYT article clearly specifies that the values are weighted
+  # So, we take sum of weights rather than count of responses
+  group_by(race_edu, response) %>% 
+  summarise(n = sum(final_weight)) %>% 
+  # Spread them so that parties are columns
+  spread(key = response, value = n) 
+# Change NA values into "0"
+race_educ[is.na(race_educ)] <- 0
+# Calculate percentages
+race_educ <- race_educ %>% 
+  # Make a new total column
+  # DESIGN DECISION NOTE
+  # The NYT article's values clearly take the percentage out of total parties
+  # So, non Dem, Rep, and Undecided values are included in the percentage calculations
+  mutate(total = Dem + Rep + Und + `3` + `4` + `5` + `6`,
+    # Here, we calculate the percentage, round it off to the nearest integer
+    # This is because we can see that the article has integers and not doubles
+    # We then divide by 100 to again produce a two digit decimal value with the final percent
+    # This is because we're using r/gt to make our tables 
+    # It's fmt_percent will always multiple the values by 100 so we need decimal inputs
+    Dem = (round(Dem*100/total))/100,
+    Rep = (round(Rep*100/total))/100,
+    Und = (round(Und*100/total))/100
+         ) %>%
+  # Remove total and independents
+  select(race_edu, Dem, Rep, Und)
+
+# Makethe table
+race_educ %>% 
+  # The race_edu should be the primary column
+  gt(rowname_col = "race_edu") %>%
+  # Cite the data source
+  tab_source_note(
+    source_note = "Data from the New York Times Upshot"
+    ) %>% 
+  # DESIGN DECISION NOTE
+  # 3 things happening here
+  # First, replication of the column headings that NYT uses
+  # Second, changing the font to the NYT default font
+  # Third, changing font color to grey to match the NYT article
+  cols_label(
+    Dem = html("<font face='nyt-frankling' color='#A9A9A9'>DEM.</font>"),
+    Rep = html("<font face='nyt-frankling' color='#A9A9A9'>REP.</font>"),
+    Und = html("<font face='nyt-frankling' color='#A9A9A9'>UND.</font>")
+  ) %>%
+  # Format all the party columns as percent
+  # Remove unnecessary .00... decimals
+  fmt_percent(
+    columns = vars(Dem),
+    decimals = 0
+  ) %>% 
+  fmt_percent(
+    columns = vars(Rep),
+    decimals = 0
+  ) %>% 
+  fmt_percent(
+    columns = vars(Und),
+    decimals = 0
+  ) %>%
+  # Add color to cells to match the article
+  # This makes the generic background grey in color
+  # Changes font to NYT font
+  tab_style(
+    style = cells_styles(
+    bkgd_color = "#f0f0f0",
+    text_font = "nyt-frankling"),
+    locations = cells_data(
+      columns = vars(Dem, Rep, Und))
+  ) %>% 
+  # Change the cell color to red
+  # Change the font color to white
+  # For all rows in which Dem percent is highest
+  # Dem > Rep satisfies it because they will both be always greater than Und
+  tab_style(
+    style = cells_styles(
+    bkgd_color = "#0089c6",
+    text_color = "white",
+    text_font = "nyt-frankling"),
+    locations = cells_data(
+    columns = vars(Dem),
+    rows = Dem >= Rep)) %>%
+  # Change the cell color to blue
+  # Change the font color to white
+  # For all rows in which Rep percent is highest
+  # Rep > Dem satisfies it because they will both be always greater than Und
+  tab_style(
+    style = cells_styles(
+    bkgd_color = "#dd0d27",
+    text_color = "white",
+    text_font = "nyt-frankling"),
+    locations = cells_data(
+    columns = vars(Rep),
+    rows = Rep >= Dem)) 
+```
+
+# 7 Minnesota 3rd -- Swing Analysis
+```{r}
+# DESIGN DECISION NOTE:
+# Reason for choosing MN-03 district
+# I chose the Minnesota 3rd District because it's a swing district
+# Furthermore, it was one of the top 25 swing districts that decided how the 2018 House race went
+# This FiveThirtyEight Article (Aug 6, 2018) discusses how important winning this district could be
+# For the democrats to win (linked: https://fivethirtyeight.com/features/25-districts-that-could-decide-the-house-in-2018/)
+# Furthermore, it is interesting because the incumbent is a Republican
+# In the last election, Republican Erik Paulsen won this district handily, but Hillary Clinton beat Donald Trump here by 9.5%. Now Democrat Dean Phillips, an entrepreneur and small business owner, could flip this critical seat
+# It is further expressed as to how important this district was when we see the amount spent on campaigning here alone by the Minnesota wings of either party (cf http://www.startribune.com/paulsen-phillips-race-for-congress-shaping-up-one-of-most-expensive-in-minnesota/489067241/)
+mn_03 <- read_csv("elections-poll-mn03-1.csv",
+                  col_names = TRUE) %>% 
+  clean_names()
+
+# DESIGN DECISION NOTE
+# Why I chose this particular graphic
+# The whole point of choosing this district is to measure the swing
+# Particularly, it's interesting to see how voters voted differently in Midterms nearly 4 years into the Trump presidency
+# It is very important to avoid partisanship
+# Even if generally affiliated to a party, voters should change their stance based on current circumstances and candidate
+# Especially in the Trump era, it's important to see how much people swung away from their inital stances
+
+# DESIGN DECISION NOTE
+# Why I am using `partyid` as opposed to `file_party` for party affiliations 
+# Reason 1: in the NYT article where they measure for party allegiances
+# The parties contain Independent and Other which are only present in partyid
+# Reason 2: Clarification about Q2 by the Preceptor on Piazza
+# It says that partyid is the affiliation to a party
+# Reason 3: In general, none of the psets, in class work, or NYT graphics use the file_* series of columns
+# This is probably from a different source and so not the best data in the df
+
+# Create a duplicate
+plot_q5 <- mn_03 %>%
+  # Remove faulty values
+  filter(!is.na(response), !is.na(partyid), partyid != "[DO NOT READ] Refused") %>% 
+  # Make Partyid factor to enable recodes
+  mutate(partyid = as.factor(partyid))
+
+# Recode partyid to change names of values so as to remove spaces; 2 reasons
+# 1. It's cleaner and is directly what we want on our X axis
+# 2. It's consistent with the other values, eg. "Democratic"
+plot_q5$partyid <- recode(
+    plot_q5$partyid,
+    "Independent (No party)" = "Independent",
+    "or as a member of another political party" = "Other")
+
+# DESIGN DECISION NOTE
+# Using final_weight instead of counting response
+# Reason 1: This creates the best picture of prediciting likely outcomes when turnout is adjusted for
+# Reason 2: This is what NYT does; it's their data so they're probably right
+
+# Making the tibble
+plot_q5 <- plot_q5 %>% 
+  # Group and count by partyid and response and find the sum of weights
+  group_by(partyid, response) %>% 
+  summarise(n = sum(final_weight)) %>% 
+  select(partyid, response, n) %>% 
+  # Spread so that the parties are each a column
+  spread(key = response, value = n) %>% 
+  # Now, calculate percentages
+  mutate(total = Dem + Rep + Und,
+         Republican = round((Rep*100)/total, digits = 2),
+         Democratic = round((Dem*100)/total, digits = 2),
+         Undecided = round((Und*100)/total, digits = 2)
+         ) %>% 
+  # Deselect total column
+  select(partyid, Democratic, Republican, Undecided) %>% 
+  # Gather the spread data back
+  # We need to do this because geom_bar needs long data
+  gather(response, percent_favoring, Democratic:Undecided) 
+
+# DESIGN DECISION NOTE
+# I made a stacked bar graph
+# Reason 1: We are evaluating percentages; this is best compared in a stack bar chart
+# Other options like pie charts are less readable and harder to distinguish between
+# Reason 2: Stacked bar charts are problematic when there are too many stacks in each bar
+# We only have 3 stacks of which other is small and thus Rep and Dem are well compared
+# Reason 3: Bar charts are easy to understand for non technical users unlike quiverplot or boxplot
+# Reason 4: Bar charts are commonly used by everyone so they're intuitive
+
+# Plot using ggplot2
+plot_q5 %>% 
+  # Here, each affiliation is on the discrete x axis
+  # Each bar is split into different responses' weighted counts
+  ggplot(aes(x = partyid, y =  percent_favoring, fill=response)) +
+  # Create a stacked bar chart and set border color as black
+  geom_bar(stat = "identity", color = "black") +
+  # Change the color of the parties in the bar chart
+  # DESIGN DECISION NOTE
+  # These colors are the same NYT colors used for Democrat and Republican 
+  # combined with yellow for independents to show differentiation and grey to show undecided
+  scale_fill_manual(values=c('#dd0d27', '#0089c6', '#F1C40F', '#808080')) +
+  # DESIGN DECISION NOTE
+  # I added text labels with the percent amounts
+  # This creates best clarity
+  # This minimizes errors in comparison when you can also compare the numbers
+  geom_text(
+    aes(label = percent_favoring),
+    # This is so that the labels are closer to the top of the stack
+    vjust = 1.2, 
+    # White color is legible on all the stack colors
+    color = "white", 
+    # This font size is large enough to be visible
+    size = 3.5, 
+    # This puts the labels above the stacks
+    position = "stack", 
+    # DESIGN DECISION NOTE
+    # This removes the top label for the Republican category but it's better because anyway that's a small percent 
+    # So, this maximizes visibility while ensuring clarity 
+    check_overlap = TRUE
+    ) +
+  # Add title, subtitle, and source note
+  labs(
+    title = "Party-Affiliated Respondents' Swing in the Minnesota 3rd District in 2018 Midterms",
+    subtitle = "Democrat, Republican, Independent, & Other Voters, & Turnout Weighted 
+    Projected Percentage of Intended Votes in this Crucial Congressional Destrict",
+    caption = "Data from New York Times Upshot"
+  ) +
+  # Change the X and Y axis captions
+  xlab("Party Affiliation") +
+  ylab("Percentage (%)") +
+  # Change the legend title
+  guides(fill=guide_legend(title="Intended Vote")) + 
+  # This is from ggthemes
+  # I chose this because it's clean, has good fonts, is minimal, and removes unnecessary grids and messiness
+  theme_tufte()
+
+# DESIGN DECISION NOTE
+# Order of discrete X axis items
+# Initially, I had ordered them as Dem, Rep and the others following
+# However, I changed this into the order where Democratic responses fall and Republican ones increase
+# This is because the objective of this graphic is to see swinging
+# So, this best highlights how little the Republicans and Democrats did Swing
+# And highlights the other higher swings in the Indepents and Other 
+```
+
+
